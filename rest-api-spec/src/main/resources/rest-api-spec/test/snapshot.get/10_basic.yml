@@ -61,10 +61,6 @@ setup:
 
 ---
 "Get snapshot info when verbose is false":
-  - skip:
-      version: " - 5.99.99"
-      reason: verbose mode was introduced in 6.0
-
   - do:
       indices.create:
         index: test_index
@@ -99,9 +95,6 @@ setup:
 
 ---
 "Get snapshot info contains include_global_state":
-  - skip:
-      version: " - 6.1.99"
-      reason: "include_global_state field has been added in the response in 6.2.0"
 
   - do:
       indices.create:

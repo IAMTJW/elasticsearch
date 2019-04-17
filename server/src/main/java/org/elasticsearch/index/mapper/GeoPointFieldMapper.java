@@ -60,6 +60,7 @@ public class GeoPointFieldMapper extends FieldMapper implements ArrayValueMapper
     public static class Names {
         public static final String IGNORE_MALFORMED = "ignore_malformed";
         public static final ParseField IGNORE_Z_VALUE = new ParseField("ignore_z_value");
+        public static final String NULL_VALUE = "null_value";
     }
 
     public static class Defaults {
@@ -134,7 +135,7 @@ public class GeoPointFieldMapper extends FieldMapper implements ArrayValueMapper
                 throws MapperParsingException {
             Builder builder = new GeoPointFieldMapper.Builder(name);
             parseField(builder, name, node, parserContext);
-
+            Object nullValue = null;
             for (Iterator<Map.Entry<String, Object>> iterator = node.entrySet().iterator(); iterator.hasNext();) {
                 Map.Entry<String, Object> entry = iterator.next();
                 String propName = entry.getKey();
@@ -147,9 +148,31 @@ public class GeoPointFieldMapper extends FieldMapper implements ArrayValueMapper
                     builder.ignoreZValue(XContentMapValues.nodeBooleanValue(propNode,
                             name + "." + Names.IGNORE_Z_VALUE.getPreferredName()));
                     iterator.remove();
+                } else if (propName.equals(Names.NULL_VALUE)) {
+                    if (propNode == null) {
+                        throw new MapperParsingException("Property [null_value] cannot be null.");
+                    }
+                    nullValue = propNode;
+                    iterator.remove();
                 }
             }
 
+            if (nullValue != null) {
+                boolean ignoreZValue = builder.ignoreZValue == null ? Defaults.IGNORE_Z_VALUE.value() : builder.ignoreZValue;
+                boolean ignoreMalformed = builder.ignoreMalformed == null ? Defaults.IGNORE_MALFORMED.value() : builder.ignoreZValue;
+                GeoPoint point = GeoUtils.parseGeoPoint(nullValue, ignoreZValue);
+                if (ignoreMalformed == false) {
+                    if (point.lat() > 90.0 || point.lat() < -90.0) {
+                        throw new IllegalArgumentException("illegal latitude value [" + point.lat() + "]");
+                    }
+                    if (point.lon() > 180.0 || point.lon() < -180) {
+                        throw new IllegalArgumentException("illegal longitude value [" + point.lon() + "]");
+                    }
+                } else {
+                    GeoUtils.normalizePoint(point);
+                }
+                builder.nullValue(point);
+            }
             return builder;
         }
     }
@@ -237,7 +260,11 @@ public class GeoPointFieldMapper extends FieldMapper implements ArrayValueMapper
                 throw new IllegalArgumentException("illegal longitude value [" + point.lon() + "] for " + name());
             }
         } else {
-            GeoUtils.normalizePoint(point);
+            if (isNormalizable(point.lat()) && isNormalizable(point.lon())) {
+                GeoUtils.normalizePoint(point);
+            } else {
+                throw new ElasticsearchParseException("cannot normalize the point - not a number");
+            }
         }
         if (fieldType().indexOptions() != IndexOptions.NONE) {
             context.doc().add(new LatLonPoint(fieldType().name(), point.lat(), point.lon()));
@@ -261,90 +288,114 @@ public class GeoPointFieldMapper extends FieldMapper implements ArrayValueMapper
     }
 
     @Override
-    public Mapper parse(ParseContext context) throws IOException {
+    public void parse(ParseContext context) throws IOException {
         context.path().add(simpleName());
 
-        GeoPoint sparse = context.parseExternalValue(GeoPoint.class);
+        try {
+            GeoPoint sparse = context.parseExternalValue(GeoPoint.class);
 
-        if (sparse != null) {
-            parse(context, sparse);
-        } else {
-            sparse = new GeoPoint();
-            XContentParser.Token token = context.parser().currentToken();
-            if (token == XContentParser.Token.START_ARRAY) {
-                token = context.parser().nextToken();
+            if (sparse != null) {
+                parse(context, sparse);
+            } else {
+                sparse = new GeoPoint();
+                XContentParser.Token token = context.parser().currentToken();
                 if (token == XContentParser.Token.START_ARRAY) {
-                    // its an array of array of lon/lat [ [1.2, 1.3], [1.4, 1.5] ]
-                    while (token != XContentParser.Token.END_ARRAY) {
-                        try {
-                            parse(context, GeoUtils.parseGeoPoint(context.parser(), sparse));
-                        } catch (ElasticsearchParseException e) {
-                            if (ignoreMalformed.value() == false) {
-                                throw e;
-                            }
-                        }
-                        token = context.parser().nextToken();
-                    }
-                } else {
-                    // its an array of other possible values
-                    if (token == XContentParser.Token.VALUE_NUMBER) {
-                        double lon = context.parser().doubleValue();
-                        token = context.parser().nextToken();
-                        double lat = context.parser().doubleValue();
-                        token = context.parser().nextToken();
-                        Double alt = Double.NaN;
-                        if (token == XContentParser.Token.VALUE_NUMBER) {
-                            alt = GeoPoint.assertZValue(ignoreZValue.value(), context.parser().doubleValue());
-                        } else if (token != XContentParser.Token.END_ARRAY) {
-                            throw new ElasticsearchParseException("[{}] field type does not accept > 3 dimensions", CONTENT_TYPE);
-                        }
-                        parse(context, sparse.reset(lat, lon));
-                    } else {
+                    token = context.parser().nextToken();
+                    if (token == XContentParser.Token.START_ARRAY) {
+                        // its an array of array of lon/lat [ [1.2, 1.3], [1.4, 1.5] ]
                         while (token != XContentParser.Token.END_ARRAY) {
-                            if (token == XContentParser.Token.VALUE_STRING) {
-                                parse(context, sparse.resetFromString(context.parser().text(), ignoreZValue.value()));
-                            } else {
-                                try {
-                                    parse(context, GeoUtils.parseGeoPoint(context.parser(), sparse));
-                                } catch (ElasticsearchParseException e) {
-                                    if (ignoreMalformed.value() == false) {
-                                        throw e;
-                                    }
-                                }
-                            }
+                            parseGeoPointIgnoringMalformed(context, sparse);
                             token = context.parser().nextToken();
                         }
+                    } else {
+                        // its an array of other possible values
+                        if (token == XContentParser.Token.VALUE_NUMBER) {
+                            double lon = context.parser().doubleValue();
+                            context.parser().nextToken();
+                            double lat = context.parser().doubleValue();
+                            token = context.parser().nextToken();
+                            if (token == XContentParser.Token.VALUE_NUMBER) {
+                                GeoPoint.assertZValue(ignoreZValue.value(), context.parser().doubleValue());
+                            } else if (token != XContentParser.Token.END_ARRAY) {
+                                throw new ElasticsearchParseException("[{}] field type does not accept > 3 dimensions", CONTENT_TYPE);
+                            }
+                            parse(context, sparse.reset(lat, lon));
+                        } else {
+                            while (token != XContentParser.Token.END_ARRAY) {
+                                if (token == XContentParser.Token.VALUE_STRING) {
+                                    parseGeoPointStringIgnoringMalformed(context, sparse);
+                                } else {
+                                    parseGeoPointIgnoringMalformed(context, sparse);
+                                }
+                                token = context.parser().nextToken();
+                            }
+                        }
                     }
-                }
-            } else if (token == XContentParser.Token.VALUE_STRING) {
-                parse(context, sparse.resetFromString(context.parser().text(), ignoreZValue.value()));
-            } else if (token != XContentParser.Token.VALUE_NULL) {
-                try {
-                    parse(context, GeoUtils.parseGeoPoint(context.parser(), sparse));
-                } catch (ElasticsearchParseException e) {
-                    if (ignoreMalformed.value() == false) {
-                        throw e;
+                } else if (token == XContentParser.Token.VALUE_STRING) {
+                    parseGeoPointStringIgnoringMalformed(context, sparse);
+                } else if (token == XContentParser.Token.VALUE_NULL) {
+                    if (fieldType.nullValue() != null) {
+                        parse(context, (GeoPoint) fieldType.nullValue());
                     }
+                } else {
+                    parseGeoPointIgnoringMalformed(context, sparse);
                 }
             }
+        } catch (Exception ex) {
+            throw new MapperParsingException("failed to parse field [{}] of type [{}]", ex, fieldType().name(), fieldType().typeName());
         }
 
         context.path().remove();
-        return null;
+    }
+
+    /**
+     * Parses geopoint represented as an object or an array, ignores malformed geopoints if needed
+     */
+    private void parseGeoPointIgnoringMalformed(ParseContext context, GeoPoint sparse) throws IOException {
+        try {
+            parse(context, GeoUtils.parseGeoPoint(context.parser(), sparse));
+        } catch (ElasticsearchParseException e) {
+            if (ignoreMalformed.value() == false) {
+                throw e;
+            }
+            context.addIgnoredField(fieldType.name());
+        }
+    }
+
+    /**
+     * Parses geopoint represented as a string and ignores malformed geopoints if needed
+     */
+    private void parseGeoPointStringIgnoringMalformed(ParseContext context, GeoPoint sparse) throws IOException {
+        try {
+            parse(context, sparse.resetFromString(context.parser().text(), ignoreZValue.value()));
+        } catch (ElasticsearchParseException e) {
+            if (ignoreMalformed.value() == false) {
+                throw e;
+            }
+            context.addIgnoredField(fieldType.name());
+        }
     }
 
     @Override
     protected void doXContentBody(XContentBuilder builder, boolean includeDefaults, Params params) throws IOException {
         super.doXContentBody(builder, includeDefaults, params);
         if (includeDefaults || ignoreMalformed.explicit()) {
-            builder.field(GeoPointFieldMapper.Names.IGNORE_MALFORMED, ignoreMalformed.value());
+            builder.field(Names.IGNORE_MALFORMED, ignoreMalformed.value());
         }
         if (includeDefaults || ignoreZValue.explicit()) {
             builder.field(Names.IGNORE_Z_VALUE.getPreferredName(), ignoreZValue.value());
+        }
+
+        if (includeDefaults || fieldType().nullValue() != null) {
+            builder.field(Names.NULL_VALUE, fieldType().nullValue());
         }
     }
 
     public Explicit<Boolean> ignoreZValue() {
         return ignoreZValue;
+    }
+
+    private boolean isNormalizable(double coord) {
+        return Double.isNaN(coord) == false && Double.isInfinite(coord) == false;
     }
 }

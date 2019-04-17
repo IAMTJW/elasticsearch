@@ -123,6 +123,8 @@ public class RestNodesAction extends AbstractCatAction {
         table.addCell("http_address", "default:false;alias:http;desc:bound http address");
 
         table.addCell("version", "default:false;alias:v;desc:es version");
+        table.addCell("flavor", "default:false;alias:f;desc:es distribution flavor");
+        table.addCell("type", "default:false;alias:t;desc:es distribution type");
         table.addCell("build", "default:false;alias:b;desc:es build hash");
         table.addCell("jdk", "default:false;alias:j;desc:jdk version");
         table.addCell("disk.total", "default:false;alias:dt,diskTotal;text-align:right;desc:total disk space");
@@ -199,6 +201,9 @@ public class RestNodesAction extends AbstractCatAction {
 
         table.addCell("refresh.total", "alias:rto,refreshTotal;default:false;text-align:right;desc:total refreshes");
         table.addCell("refresh.time", "alias:rti,refreshTime;default:false;text-align:right;desc:time spent in refreshes");
+        table.addCell("refresh.external_total", "alias:rto,refreshTotal;default:false;text-align:right;desc:total external refreshes");
+        table.addCell("refresh.external_time",
+            "alias:rti,refreshTime;default:false;text-align:right;desc:time spent in external refreshes");
         table.addCell("refresh.listeners", "alias:rli,refreshListeners;default:false;text-align:right;"
                 + "desc:number of pending refresh listeners");
 
@@ -271,6 +276,8 @@ public class RestNodesAction extends AbstractCatAction {
             }
 
             table.addCell(node.getVersion().toString());
+            table.addCell(info == null ? null : info.getBuild().flavor().displayName());
+            table.addCell(info == null ? null : info.getBuild().type().displayName());
             table.addCell(info == null ? null : info.getBuild().shortHash());
             table.addCell(jvmInfo == null ? null : jvmInfo.version());
 
@@ -374,6 +381,8 @@ public class RestNodesAction extends AbstractCatAction {
             RefreshStats refreshStats = indicesStats == null ? null : indicesStats.getRefresh();
             table.addCell(refreshStats == null ? null : refreshStats.getTotal());
             table.addCell(refreshStats == null ? null : refreshStats.getTotalTime());
+            table.addCell(refreshStats == null ? null : refreshStats.getExternalTotal());
+            table.addCell(refreshStats == null ? null : refreshStats.getExternalTotalTime());
             table.addCell(refreshStats == null ? null : refreshStats.getListeners());
 
             ScriptStats scriptStats = stats == null ? null : stats.getScriptStats();

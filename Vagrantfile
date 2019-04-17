@@ -31,6 +31,9 @@ Vagrant.configure(2) do |config|
     # Give the box more memory and cpu because our tests are beasts!
     vbox.memory = Integer(ENV['VAGRANT_MEMORY'] || 8192)
     vbox.cpus = Integer(ENV['VAGRANT_CPUS'] || 4)
+
+    # see https://github.com/hashicorp/vagrant/issues/9524
+    vbox.customize ["modifyvm", :id, "--audio", "none"]
   end
 
   # Switch the default share for the project root from /vagrant to
@@ -43,18 +46,21 @@ Vagrant.configure(2) do |config|
   PROJECT_DIR = ENV['VAGRANT_PROJECT_DIR'] || Dir.pwd
   config.vm.synced_folder PROJECT_DIR, '/project'
 
-  'ubuntu-1404'.tap do |box|
-    config.vm.define box, define_opts do |config|
-      config.vm.box = 'elastic/ubuntu-14.04-x86_64'
-      deb_common config, box
-    end
-  end
   'ubuntu-1604'.tap do |box|
     config.vm.define box, define_opts do |config|
       config.vm.box = 'elastic/ubuntu-16.04-x86_64'
       deb_common config, box, extra: <<-SHELL
         # Install Jayatana so we can work around it being present.
         [ -f /usr/share/java/jayatanaag.jar ] || install jayatana
+      SHELL
+    end
+  end
+  'ubuntu-1804'.tap do |box|
+    config.vm.define box, define_opts do |config|
+      config.vm.box = 'elastic/ubuntu-18.04-x86_64'
+      deb_common config, box, extra: <<-SHELL
+       # Install Jayatana so we can work around it being present.
+       [ -f /usr/share/java/jayatanaag.jar ] || install jayatana
       SHELL
     end
   end
@@ -97,15 +103,15 @@ Vagrant.configure(2) do |config|
       rpm_common config, box
     end
   end
-  'fedora-26'.tap do |box|
+  'fedora-28'.tap do |box|
     config.vm.define box, define_opts do |config|
-      config.vm.box = 'elastic/fedora-26-x86_64'
+      config.vm.box = 'elastic/fedora-28-x86_64'
       dnf_common config, box
     end
   end
-  'fedora-27'.tap do |box|
+  'fedora-29'.tap do |box|
     config.vm.define box, define_opts do |config|
-      config.vm.box = 'elastic/fedora-27-x86_64'
+      config.vm.box = 'elastic/fedora-28-x86_64'
       dnf_common config, box
     end
   end
@@ -119,6 +125,26 @@ Vagrant.configure(2) do |config|
     config.vm.define box, define_opts do |config|
       config.vm.box = 'elastic/sles-12-x86_64'
       sles_common config, box
+    end
+  end
+
+  windows_2012r2_box = ENV['VAGRANT_WINDOWS_2012R2_BOX']
+  if windows_2012r2_box && windows_2012r2_box.empty? == false
+    'windows-2012r2'.tap do |box|
+      config.vm.define box, define_opts do |config|
+        config.vm.box = windows_2012r2_box
+        windows_common config, box
+      end
+    end
+  end
+
+  windows_2016_box = ENV['VAGRANT_WINDOWS_2016_BOX']
+  if windows_2016_box && windows_2016_box.empty? == false
+    'windows-2016'.tap do |box|
+      config.vm.define box, define_opts do |config|
+        config.vm.box = windows_2016_box
+        windows_common config, box
+      end
     end
   end
 end
@@ -217,6 +243,11 @@ def linux_common(config,
 
   config.vm.provision 'markerfile', type: 'shell', inline: <<-SHELL
     touch /etc/is_vagrant_vm
+    touch /is_vagrant_vm # for consistency between linux and windows
+  SHELL
+
+  config.vm.provision 'jdk-11', type: 'shell', inline: <<-SHELL
+    curl -sSL https://download.java.net/java/GA/jdk11/9/GPL/openjdk-11.0.2_linux-x64_bin.tar.gz | tar xz -C /opt/
   SHELL
 
   # This prevents leftovers from previous tests using the
@@ -313,6 +344,13 @@ def sh_install_deps(config,
       echo "==> Java is not installed"
       return 1
     }
+    cat \<\<JAVA > /etc/profile.d/java_home.sh
+if [ -z "\\\$JAVA_HOME" ]; then
+  export JAVA_HOME=/opt/jdk-11.0.2
+fi
+export SYSTEM_JAVA_HOME=\\\$JAVA_HOME
+unset JAVA_HOME
+JAVA
     ensure tar
     ensure curl
     ensure unzip
@@ -337,6 +375,7 @@ export BATS=/project/build/bats
 export BATS_UTILS=/project/build/packaging/bats/utils
 export BATS_TESTS=/project/build/packaging/bats/tests
 export PACKAGING_ARCHIVES=/project/build/packaging/archives
+export PACKAGING_TESTS=/project/build/packaging/tests
 VARS
     cat \<\<SUDOERS_VARS > /etc/sudoers.d/elasticsearch_vars
 Defaults   env_keep += "ZIP"
@@ -347,7 +386,32 @@ Defaults   env_keep += "BATS"
 Defaults   env_keep += "BATS_UTILS"
 Defaults   env_keep += "BATS_TESTS"
 Defaults   env_keep += "PACKAGING_ARCHIVES"
+Defaults   env_keep += "PACKAGING_TESTS"
+Defaults   env_keep += "JAVA_HOME"
+Defaults   env_keep += "SYSTEM_JAVA_HOME"
 SUDOERS_VARS
     chmod 0440 /etc/sudoers.d/elasticsearch_vars
+  SHELL
+end
+
+def windows_common(config, name)
+  config.vm.provision 'markerfile', type: 'shell', inline: <<-SHELL
+    $ErrorActionPreference = "Stop"
+    New-Item C:/is_vagrant_vm -ItemType file -Force | Out-Null
+  SHELL
+
+  config.vm.provision 'set prompt', type: 'shell', inline: <<-SHELL
+    $ErrorActionPreference = "Stop"
+    $ps_prompt = 'function Prompt { "#{name}:$($ExecutionContext.SessionState.Path.CurrentLocation)>" }'
+    $ps_prompt | Out-File $PsHome/Microsoft.PowerShell_profile.ps1
+  SHELL
+
+  config.vm.provision 'set env variables', type: 'shell', inline: <<-SHELL
+    $ErrorActionPreference = "Stop"
+    [Environment]::SetEnvironmentVariable("PACKAGING_ARCHIVES", "C:/project/build/packaging/archives", "Machine")
+    $javaHome = [Environment]::GetEnvironmentVariable("JAVA_HOME", "Machine")
+    [Environment]::SetEnvironmentVariable("SYSTEM_JAVA_HOME", $javaHome, "Machine")
+    [Environment]::SetEnvironmentVariable("PACKAGING_TESTS", "C:/project/build/packaging/tests", "Machine")
+    [Environment]::SetEnvironmentVariable("JAVA_HOME", $null, "Machine")
   SHELL
 end

@@ -27,7 +27,6 @@ import org.apache.lucene.queries.ExtendedCommonTermsQuery;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.util.BytesRefBuilder;
-import org.elasticsearch.Version;
 import org.elasticsearch.common.ParseField;
 import org.elasticsearch.common.ParsingException;
 import org.elasticsearch.common.Strings;
@@ -56,7 +55,6 @@ public class CommonTermsQueryBuilder extends AbstractQueryBuilder<CommonTermsQue
     public static final float DEFAULT_CUTOFF_FREQ = 0.01f;
     public static final Operator DEFAULT_HIGH_FREQ_OCCUR = Operator.OR;
     public static final Operator DEFAULT_LOW_FREQ_OCCUR = Operator.OR;
-    public static final boolean DEFAULT_DISABLE_COORD = true;
 
     private static final ParseField CUTOFF_FREQUENCY_FIELD = new ParseField("cutoff_frequency");
     private static final ParseField MINIMUM_SHOULD_MATCH_FIELD = new ParseField("minimum_should_match");
@@ -111,9 +109,6 @@ public class CommonTermsQueryBuilder extends AbstractQueryBuilder<CommonTermsQue
         analyzer = in.readOptionalString();
         lowFreqMinimumShouldMatch = in.readOptionalString();
         highFreqMinimumShouldMatch = in.readOptionalString();
-        if (in.getVersion().before(Version.V_6_0_0_alpha1)) {
-            in.readBoolean(); // disable_coord
-        }
         cutoffFrequency = in.readFloat();
     }
 
@@ -126,9 +121,6 @@ public class CommonTermsQueryBuilder extends AbstractQueryBuilder<CommonTermsQue
         out.writeOptionalString(analyzer);
         out.writeOptionalString(lowFreqMinimumShouldMatch);
         out.writeOptionalString(highFreqMinimumShouldMatch);
-        if (out.getVersion().before(Version.V_6_0_0_alpha1)) {
-            out.writeBoolean(true); // disable_coord
-        }
         out.writeFloat(cutoffFrequency);
     }
 
@@ -143,7 +135,7 @@ public class CommonTermsQueryBuilder extends AbstractQueryBuilder<CommonTermsQue
     /**
      * Sets the operator to use for terms with a high document frequency
      * (greater than or equal to {@link #cutoffFrequency(float)}. Defaults to
-     * <tt>AND</tt>.
+     * {@code AND}.
      */
     public CommonTermsQueryBuilder highFreqOperator(Operator operator) {
         this.highFreqOperator = (operator == null) ? DEFAULT_HIGH_FREQ_OCCUR : operator;
@@ -156,7 +148,7 @@ public class CommonTermsQueryBuilder extends AbstractQueryBuilder<CommonTermsQue
 
     /**
      * Sets the operator to use for terms with a low document frequency (less
-     * than {@link #cutoffFrequency(float)}. Defaults to <tt>AND</tt>.
+     * than {@link #cutoffFrequency(float)}. Defaults to {@code AND}.
      */
     public CommonTermsQueryBuilder lowFreqOperator(Operator operator) {
         this.lowFreqOperator = (operator == null) ? DEFAULT_LOW_FREQ_OCCUR : operator;
@@ -185,7 +177,7 @@ public class CommonTermsQueryBuilder extends AbstractQueryBuilder<CommonTermsQue
      * in [0..1] (or absolute number &gt;=1) representing the maximum threshold of
      * a terms document frequency to be considered a low frequency term.
      * Defaults to
-     * <tt>{@value #DEFAULT_CUTOFF_FREQ}</tt>
+     * {@code {@value #DEFAULT_CUTOFF_FREQ}}
      */
     public CommonTermsQueryBuilder cutoffFrequency(float cutoffFrequency) {
         this.cutoffFrequency = cutoffFrequency;
@@ -371,8 +363,7 @@ public class CommonTermsQueryBuilder extends AbstractQueryBuilder<CommonTermsQue
         Occur highFreqOccur = highFreqOperator.toBooleanClauseOccur();
         Occur lowFreqOccur = lowFreqOperator.toBooleanClauseOccur();
 
-        ExtendedCommonTermsQuery commonsQuery = new ExtendedCommonTermsQuery(highFreqOccur, lowFreqOccur,
-                cutoffFrequency, fieldType);
+        ExtendedCommonTermsQuery commonsQuery = new ExtendedCommonTermsQuery(highFreqOccur, lowFreqOccur, cutoffFrequency);
         return parseQueryString(commonsQuery, text, field, analyzerObj, lowFreqMinimumShouldMatch, highFreqMinimumShouldMatch);
     }
 

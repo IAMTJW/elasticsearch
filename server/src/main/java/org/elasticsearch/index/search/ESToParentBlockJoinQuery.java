@@ -20,8 +20,10 @@
 package org.elasticsearch.index.search;
 
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.QueryVisitor;
 import org.apache.lucene.search.Weight;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.search.join.ScoreMode;
@@ -75,8 +77,14 @@ public final class ESToParentBlockJoinQuery extends Query {
     }
 
     @Override
-    public Weight createWeight(IndexSearcher searcher, boolean needsScores, float boost) throws IOException {
-        return query.createWeight(searcher, needsScores, boost);
+    public void visit(QueryVisitor visitor) {
+        // Highlighters must visit the child query to extract terms
+        query.getChildQuery().visit(visitor.getSubVisitor(BooleanClause.Occur.MUST, this));
+    }
+
+    @Override
+    public Weight createWeight(IndexSearcher searcher, org.apache.lucene.search.ScoreMode scoreMode, float boost) throws IOException {
+        return query.createWeight(searcher, scoreMode, boost);
     }
 
     @Override

@@ -90,7 +90,6 @@ public abstract class BlobStoreFormat<T extends ToXContent> {
         return readBlob(blobContainer, blobName);
     }
 
-
     /**
      * Deletes obj in the blob container
      */
@@ -101,11 +100,11 @@ public abstract class BlobStoreFormat<T extends ToXContent> {
     /**
      * Checks obj in the blob container
      */
-    public boolean exists(BlobContainer blobContainer, String name) throws IOException {
+    public boolean exists(BlobContainer blobContainer, String name) {
         return blobContainer.blobExists(blobName(name));
     }
 
-    protected String blobName(String name) {
+    public String blobName(String name) {
         return String.format(Locale.ROOT, blobNameFormat, name);
     }
 

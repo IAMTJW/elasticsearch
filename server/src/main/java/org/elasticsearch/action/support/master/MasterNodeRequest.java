@@ -76,4 +76,5 @@ public abstract class MasterNodeRequest<Request extends MasterNodeRequest<Reques
         super.readFrom(in);
         masterNodeTimeout = in.readTimeValue();
     }
+
 }

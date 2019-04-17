@@ -24,7 +24,6 @@ import org.apache.lucene.queries.ExtendedCommonTermsQuery;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.DocValuesFieldExistsQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
@@ -37,6 +36,8 @@ import org.elasticsearch.common.Nullable;
 import org.elasticsearch.index.mapper.SeqNoFieldMapper;
 import org.elasticsearch.index.mapper.TypeFieldMapper;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -53,7 +54,11 @@ public class Queries {
 
 
     public static Query newUnmappedFieldQuery(String field) {
-        return Queries.newMatchNoDocsQuery("unmapped field [" + (field != null ? field : "null") + "]");
+        return newUnmappedFieldsQuery(Collections.singletonList(field));
+    }
+
+    public static Query newUnmappedFieldsQuery(Collection<String> fields) {
+        return Queries.newMatchNoDocsQuery("unmapped fields " + fields);
     }
 
     public static Query newLenientFieldQuery(String field, RuntimeException e) {

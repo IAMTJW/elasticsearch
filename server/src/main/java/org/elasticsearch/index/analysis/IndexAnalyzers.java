@@ -27,6 +27,8 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import static java.util.Collections.unmodifiableMap;
+
 /**
  * IndexAnalyzers contains a name to analyzer mapping for a specific index.
  * This class only holds analyzers that are explicitly configured for an index and doesn't allow
@@ -40,11 +42,11 @@ public final class IndexAnalyzers extends AbstractIndexComponent implements Clos
     private final NamedAnalyzer defaultSearchQuoteAnalyzer;
     private final Map<String, NamedAnalyzer> analyzers;
     private final Map<String, NamedAnalyzer> normalizers;
-    private final IndexSettings indexSettings;
+    private final Map<String, NamedAnalyzer> whitespaceNormalizers;
 
     public IndexAnalyzers(IndexSettings indexSettings, NamedAnalyzer defaultIndexAnalyzer, NamedAnalyzer defaultSearchAnalyzer,
                           NamedAnalyzer defaultSearchQuoteAnalyzer, Map<String, NamedAnalyzer> analyzers,
-                          Map<String, NamedAnalyzer> normalizers) {
+                          Map<String, NamedAnalyzer> normalizers, Map<String, NamedAnalyzer> whitespaceNormalizers) {
         super(indexSettings);
         if (defaultIndexAnalyzer.name().equals("default") == false) {
             throw new IllegalStateException("default analyzer must have the name [default] but was: [" + defaultIndexAnalyzer.name() + "]");
@@ -52,9 +54,9 @@ public final class IndexAnalyzers extends AbstractIndexComponent implements Clos
         this.defaultIndexAnalyzer = defaultIndexAnalyzer;
         this.defaultSearchAnalyzer = defaultSearchAnalyzer;
         this.defaultSearchQuoteAnalyzer = defaultSearchQuoteAnalyzer;
-        this.analyzers = analyzers;
-        this.normalizers = normalizers;
-        this.indexSettings = indexSettings;
+        this.analyzers = unmodifiableMap(analyzers);
+        this.normalizers = unmodifiableMap(normalizers);
+        this.whitespaceNormalizers = unmodifiableMap(whitespaceNormalizers);
     }
 
     /**
@@ -69,6 +71,13 @@ public final class IndexAnalyzers extends AbstractIndexComponent implements Clos
      */
     public NamedAnalyzer getNormalizer(String name) {
         return normalizers.get(name);
+    }
+
+    /**
+     * Returns a normalizer that splits on whitespace mapped to the given name or <code>null</code> if not present
+     */
+    public NamedAnalyzer getWhitespaceNormalizer(String name) {
+        return whitespaceNormalizers.get(name);
     }
 
     /**
@@ -98,12 +107,4 @@ public final class IndexAnalyzers extends AbstractIndexComponent implements Clos
            .filter(a -> a.scope() == AnalyzerScope.INDEX)
            .iterator());
     }
-
-    /**
-     * Returns the indices settings
-     */
-    public IndexSettings getIndexSettings() {
-        return indexSettings;
-    }
-
 }
